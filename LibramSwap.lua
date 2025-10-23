@@ -160,7 +160,7 @@ end)
 -- Tolerant of spaces and case ("rank", "RANK") and extra whitespace.
 local function SplitNameAndRank(spellSpec)
     if not spellSpec then return nil, nil end
-    local base, rnum = string.match(spellSpec, "^(.-)%s*%(%s*[Rr][Aa][Nn][Kk]%s*(%d+)%s*%)%s*$")
+    local base, rnum = string.find(spellSpec, "^(.-)%s*%(%s*[Rr][Aa][Nn][Kk]%s*(%d+)%s*%)%s*$")
     if base then
         return (string.gsub(base, "%s+$", "")), ("Rank " .. rnum)
     end
