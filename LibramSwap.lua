@@ -101,7 +101,7 @@ WatchedNames[CONSECRATION_FARRAKI]  = true
 -- Extract numeric itemID from an item link (1.12 safe)
 local function ItemIDFromLink(link)
     if not link then return nil end
-    local _, _, id = string.find(link, "item:(%d+)")
+    local _, _, id = string_find(link, "item:(%d+)")
     return id and tonumber(id) or nil
 end
 
