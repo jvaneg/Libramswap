@@ -426,16 +426,16 @@ SLASH_HOLYSTRIKELIBRAM2 = "/hslibram"
 SlashCmdList["HOLYSTRIKELIBRAM"] = function(msg)
     msg = string.lower(tostring(msg or ""))
     if msg == "radiance" or msg == "r" then
-        LibramConsecrationMode = "radiance"
+        LibramHolyStrikeMode = "radiance"
     elseif msg == "eternal" or msg == "e" then
-        LibramConsecrationMode = "eternal"
+        LibramHolyStrikeMode = "eternal"
     elseif msg == "toggle" or msg == "" then
-        LibramConsecrationMode = (LibramConsecrationMode == "radiance") and "eternal" or "radiance"
+        LibramHolyStrikeMode = (LibramHolyStrikeMode == "radiance") and "eternal" or "radiance"
     else
         DEFAULT_CHAT_FRAME:AddMessage("|cFFAAAAFF[LibramSwap]: /holystrikelibram [radiance|eternal|toggle]|r")
         return
     end
-    local active = (LibramConsecrationMode == "eternal") and HOLY_STRIKE_ETERNAL_TOWER or HOLY_STRIKE_RADIANCE
+    local active = (LibramHolyStrikeMode == "eternal") and HOLY_STRIKE_ETERNAL_TOWER or HOLY_STRIKE_RADIANCE
     DEFAULT_CHAT_FRAME:AddMessage("|cFFAAAAFF[LibramSwap]: Holy Strike libram set to|r " .. active)
 end
 
