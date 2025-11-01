@@ -2,4 +2,5 @@
 ## Title: LibramSwap
 ## Notes: Swaps to correct libram before casting Paladin spells
 ## Author: Theo
+## SavedVariables: LibramSwapDb
 LibramSwap.lua
