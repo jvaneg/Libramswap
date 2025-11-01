@@ -22,6 +22,9 @@ local NameIndex   = {}  -- [itemName] = {bag=#, slot=#, link="|Hitem:..|h[Name]|
 local IdIndex     = {}  -- [itemID]   = {bag=#, slot=#, link=...}  (optional use later)
 local reindexQueued = false
 
+-- === Spell cache ===
+local SpellCache = {}
+
 -- Safety: block swaps when vendor/bank/auction/trade/mail/quest/gossip is open
 local function IsInteractionBusy()
     return (MerchantFrame and MerchantFrame:IsVisible())
@@ -172,26 +175,63 @@ local function SplitNameAndRank(spellSpec)
     return (string.gsub(spellSpec, "%s+$", "")), nil
 end
 
+-- gets spell readiness by ID
+local function IsSpellReadyById(spellId)
+    local start, duration, enabled = GetSpellCooldown(spellId, BOOKTYPE_SPELL)
+    if not (start and duration) then
+        return false 
+    end
+
+    if enabled == 0 then
+        return false 
+    end
+
+    if start == 0 or duration == 0 then
+        return true
+    end
+
+    -- needed for desync jank
+    local remaining = (start + duration) - GetTime()
+    return remaining <= 0
+end
+
 -- =====================
 -- Spell Readiness (1.12-safe, rank-aware)
 -- =====================
 -- Accepts: "Name" or "Name(Rank X)". If a rank is specified, require that exact rank.
--- Returns: ready:boolean, start:number, duration:number
+-- Returns: ready:boolean
 local function IsSpellReady(spellSpec)
-    local base, reqRank = SplitNameAndRank(spellSpec)
-    for i = 1, 300 do
-        local name, rank = GetSpellName(i, BOOKTYPE_SPELL)
-        if not name then break end
-        if name == base and (not reqRank or (rank and rank == reqRank)) then
-            local start, duration, enabled = GetSpellCooldown(i, BOOKTYPE_SPELL)
-            if not start or not duration then return false end
-            if enabled == 0 then return false end
-            if start == 0 or duration == 0 then return true, 0, 0 end
-            local remaining = (start + duration) - GetTime()
-            return remaining <= 0, start, duration
+    local spellId = SpellCache[spellSpec]
+
+    -- if not cached, find the spell and cache it
+    if not spellId then
+        local base, reqRank = SplitNameAndRank(spellSpec)
+        if not base then 
+            return false
+        end
+
+        for i = 1, 300 do
+            local name, rank = GetSpellName(i, BOOKTYPE_SPELL)
+            if not name then
+                break
+            end
+
+            local nameMatches = (name == base)
+            local rankMatches = (not reqRank) or (rank and rank == reqRank)
+            if nameMatches and rankMatches then
+                spellId = i
+                SpellCache[spellSpec] = i
+                break
+            end
         end
     end
-    return false
+
+    -- not a real spell, early return
+    if not spellId then
+        return false
+    end
+
+    return IsSpellReadyById(spellId)
 end
 
 -- =====================
@@ -377,44 +417,58 @@ end
 -- =====================
 local Original_CastSpellByName = CastSpellByName
 function CastSpellByName(spellName, bookType)
-    if LibramSwapDb.enabled then
-        local base = SplitNameAndRank(spellName)    -- base only for map/throttles
-        local libram = ResolveLibramForSpell(base)
-        if libram and IsSpellReady(spellName) then  -- rank-aware readiness
-            if base == "Judgement" then
-                local hp = TargetHealthPct()
-                if hp and hp <= 35 then
-                    EquipLibramForSpell(base, libram)
-                end
-            else
-                EquipLibramForSpell(base, libram)
-            end
-        end
+    if not LibramSwapDb.enabled then
+        return Original_CastSpellByName(spellName, bookType)
     end
+
+    local base = SplitNameAndRank(spellName) -- base only for map/throttles
+    local libram = ResolveLibramForSpell(base)
+    if not (libram and IsSpellReady(spellName)) then -- rank-aware readiness
+        return Original_CastSpellByName(spellName, bookType)
+    end
+
+    if base == "Judgement" then
+        local hp = TargetHealthPct()
+        if hp and hp <= 35 then
+            EquipLibramForSpell(base, libram)
+        end
+    else
+        EquipLibramForSpell(base, libram)
+    end
+
     return Original_CastSpellByName(spellName, bookType)
 end
 
 local Original_CastSpell = CastSpell
 function CastSpell(spellIndex, bookType)
-    if LibramSwapDb.enabled and bookType == BOOKTYPE_SPELL then
-        local name, rank = GetSpellName(spellIndex, BOOKTYPE_SPELL)
-        if name then
-            local libram = ResolveLibramForSpell(name)  -- base name for map
-            if libram then
-                local spec = (rank and rank ~= "") and (name .. "(" .. rank .. ")") or name
-                if IsSpellReady(spec) then              -- exact-rank readiness
-                    if name == "Judgement" then
-                        local hp = TargetHealthPct()
-                        if hp and hp <= 35 then
-                            EquipLibramForSpell(name, libram)
-                        end
-                    else
-                        EquipLibramForSpell(name, libram)
-                    end
-                end
-            end
-        end
+    if not (LibramSwapDb.enabled and bookType == BOOKTYPE_SPELL) then
+        return Original_CastSpell(spellIndex, bookType)
     end
+
+    local name, rank = GetSpellName(spellIndex, BOOKTYPE_SPELL)
+    if not name then
+        return Original_CastSpell(spellIndex, bookType)
+    end
+
+    local libram = ResolveLibramForSpell(name) -- base name for map
+    if not libram then
+        return Original_CastSpell(spellIndex, bookType)
+    end
+
+    local spec = (rank and rank ~= "") and (name .. "(" .. rank .. ")") or name
+    if not IsSpellReady(spec) then -- exact-rank readiness
+        return Original_CastSpell(spellIndex, bookType)
+    end
+
+    if name == "Judgement" then
+        local hp = TargetHealthPct()
+        if hp and hp <= 35 then
+            EquipLibramForSpell(name, libram)
+        end
+    else
+        EquipLibramForSpell(name, libram)
+    end
+
     return Original_CastSpell(spellIndex, bookType)
 end
 
