@@ -33,8 +33,6 @@ local function IsInteractionBusy()
         or (GossipFrame and GossipFrame:IsVisible())
 end
 
-local LibramSwapEnabled = false
-local LibramSwapSpam = true
 local lastEquippedLibram = nil
 
 -- Global (generic) throttle for GCD-based swaps
@@ -43,6 +41,18 @@ local lastSwapTime = 0
 -- =====================
 -- Config
 -- =====================
+
+-- Initialize saved variables with defaults
+LibramSwapDb = LibramSwapDb or {
+    enabled = false,
+    spam = true,
+    -- Runtime toggle for which librams to use for spells with multiple options
+    -- Consecration: ("faithful" or "farraki")
+    -- Holy Strike: ("eternal" or "radiance")
+    consecrationMode = "faithful",
+    holyStrikeMode = "eternal"
+}
+
 -- Keep original generic throttle for GCD spells
 local SWAP_THROTTLE_GENERIC = 1.48
 
@@ -58,15 +68,6 @@ local CONSECRATION_FARRAKI  = "Libram of the Farraki Zealot"
 -- Holy Strike libram choices
 local HOLY_STRIKE_ETERNAL_TOWER = "Libram of the Eternal Tower"
 local HOLY_STRIKE_RADIANCE  = "Libram of Radiance"
-
--- Runtime toggle for which librams to use for spells with multiple options
--- Consecration: ("faithful" or "farraki")
--- Holy Strike: ("eternal" or "radiance")
--- (Session-only; add to SavedVariables in the TOC if you want it to persist between logins.)
-LibramConsecrationMode = LibramConsecrationMode or "faithful"
-LibramHolyStrikeMode = LibramHolyStrikeMode or "eternal"
-
-
 
 -- Map spells -> preferred libram name (bag/equipped link substring match)
 local LibramMap = {
@@ -107,6 +108,9 @@ end
 -- Consecration options
 WatchedNames[CONSECRATION_FAITHFUL] = true
 WatchedNames[CONSECRATION_FARRAKI]  = true
+-- Holy  Strike options
+WatchedNames[HOLY_STRIKE_ETERNAL_TOWER] = true
+WatchedNames[HOLY_STRIKE_RADIANCE]  = true
 
 -- Extract numeric itemID from an item link (1.12 safe)
 local function ItemIDFromLink(link)
@@ -152,7 +156,6 @@ LibramSwapFrame:SetScript("OnEvent", function(_, event)
     elseif event == "BAG_UPDATE" then
         -- simple & safe: rebuild immediately (cost is tiny since we only watch librams)
         BuildBagIndex()
-    end
 end)
 
 -- =====================
@@ -296,7 +299,7 @@ local function EquipLibramForSpell(spellName, itemName)
             lastSwapTime = now
         end
 
-        if LibramSwapSpam then
+        if LibramSwapDb.spam then
             DEFAULT_CHAT_FRAME:AddMessage("|cFFAAAAFF[LibramSwap]:|r Equipped |cFFFFD700" .. itemName .. "|r |cFF888888(" .. spellName .. ")|r")
         end
         
@@ -308,7 +311,7 @@ end
 local function ResolveLibramForSpell(spellName)
     -- Special handling: Consecration libram is user-selectable
     if spellName == "Consecration" then
-        local mode = (LibramConsecrationMode == "farraki") and "farraki" or "faithful"
+        local mode = (LibramSwapDb.consecrationMode == "farraki") and "farraki" or "faithful"
         if mode == "farraki" then
             if HasItemInBags(CONSECRATION_FARRAKI) then return CONSECRATION_FARRAKI end
             if HasItemInBags(CONSECRATION_FAITHFUL) then return CONSECRATION_FAITHFUL end
@@ -322,7 +325,7 @@ local function ResolveLibramForSpell(spellName)
 
     -- Special handling: Holy Strike libram is user-selectable
     if spellName == "Holy Strike" then
-        local mode = (LibramHolyStrikeMode == "eternal") and "eternal" or "radiance"
+        local mode = (LibramSwapDb.holyStrikeMode == "eternal") and "eternal" or "radiance"
         if mode == "eternal" then
             if HasItemInBags(HOLY_STRIKE_ETERNAL_TOWER) then return HOLY_STRIKE_ETERNAL_TOWER end
             if HasItemInBags(HOLY_STRIKE_RADIANCE) then return HOLY_STRIKE_RADIANCE end
@@ -351,12 +354,29 @@ local function trim(s)
     return (string.gsub(s or "", "^%s*(.-)%s*$", "%1"))
 end
 
+-- Prints current status
+local function printStatus()
+    local status = LibramSwapDb.enabled and "|cFF00FF00ENABLED|r" or "|cFFFF0000DISABLED|r"
+    DEFAULT_CHAT_FRAME:AddMessage("|cFFAAAAFF[LibramSwap] Status:|r " .. status)
+
+    local spamStatus = LibramSwapDb.spam and "|cFF00FF00ON|r" or "|cFFFF0000OFF|r"
+    DEFAULT_CHAT_FRAME:AddMessage("  Swap messages: " .. spamStatus)
+
+    -- Show Consecration setting
+    local consecLibram = (LibramSwapDb.consecrationMode == "farraki") and CONSECRATION_FARRAKI or CONSECRATION_FAITHFUL
+    DEFAULT_CHAT_FRAME:AddMessage("  Consecration: |cFFFFD700" .. consecLibram .. "|r")
+
+    -- Show Holy Strike setting
+    local hsLibram = (LibramSwapDb.holyStrikeMode == "eternal") and HOLY_STRIKE_ETERNAL_TOWER or HOLY_STRIKE_RADIANCE
+    DEFAULT_CHAT_FRAME:AddMessage("  Holy Strike: |cFFFFD700" .. hsLibram .. "|r")
+end
+
 -- =====================
 -- Hooks (CastSpellByName / CastSpell)
 -- =====================
 local Original_CastSpellByName = CastSpellByName
 function CastSpellByName(spellName, bookType)
-    if LibramSwapEnabled then
+    if LibramSwapDb.enabled then
         local base = SplitNameAndRank(spellName)    -- base only for map/throttles
         local libram = ResolveLibramForSpell(base)
         if libram and IsSpellReady(spellName) then  -- rank-aware readiness
@@ -375,7 +395,7 @@ end
 
 local Original_CastSpell = CastSpell
 function CastSpell(spellIndex, bookType)
-    if LibramSwapEnabled and bookType == BOOKTYPE_SPELL then
+    if LibramSwapDb.enabled and bookType == BOOKTYPE_SPELL then
         local name, rank = GetSpellName(spellIndex, BOOKTYPE_SPELL)
         if name then
             local libram = ResolveLibramForSpell(name)  -- base name for map
@@ -411,25 +431,25 @@ local function HandleLibramSwapCommand(msg)
     arg = arg or ""
     
     if cmd == "on" then
-        LibramSwapEnabled = true
+        LibramSwapDb.enabled = true
         DEFAULT_CHAT_FRAME:AddMessage("|cFFAAAAFF[LibramSwap]:|r |cFF00FF00ENABLED|r")
         
     elseif cmd == "off" then
-        LibramSwapEnabled = false
+        LibramSwapDb.enabled = false
         DEFAULT_CHAT_FRAME:AddMessage("|cFFAAAAFF[LibramSwap]:|r |cFFFF0000DISABLED|r")
 
     elseif cmd == "spam" then
-        LibramSwapSpam = not LibramSwapSpam
-        local spamStatus = LibramSwapSpam and "|cFF00FF00ON|r" or "|cFFFF0000OFF|r"
+        LibramSwapDb.spam = not LibramSwapDb.spam
+        local spamStatus = LibramSwapDb.spam and "|cFF00FF00ON|r" or "|cFFFF0000OFF|r"
         DEFAULT_CHAT_FRAME:AddMessage("|cFFAAAAFF[LibramSwap]:|r Swap messages " .. spamStatus)
         
     elseif cmd == "consecration" or cmd == "consec" or cmd == "c" then
         arg = string.lower(arg)
         if arg == "faithful" or arg == "f" then
-            LibramConsecrationMode = "faithful"
+            LibramSwapDb.consecrationMode = "faithful"
             DEFAULT_CHAT_FRAME:AddMessage("|cFFAAAAFF[LibramSwap]:|r Consecration set to |cFFFFD700" .. CONSECRATION_FAITHFUL .. "|r")
         elseif arg == "farraki" or arg == "z" or arg == "zealot" then
-            LibramConsecrationMode = "farraki"
+            LibramSwapDb.consecrationMode = "farraki"
             DEFAULT_CHAT_FRAME:AddMessage("|cFFAAAAFF[LibramSwap]:|r Consecration set to |cFFFFD700" .. CONSECRATION_FARRAKI .. "|r")
         else
             DEFAULT_CHAT_FRAME:AddMessage("|cFFAAAAFF[LibramSwap]:|r Usage: /ls consecration [faithful / farraki]|r")
@@ -438,29 +458,17 @@ local function HandleLibramSwapCommand(msg)
     elseif cmd == "holystrike" or cmd == "hs" then
         arg = string.lower(arg)
         if arg == "radiance" or arg == "r" then
-            LibramHolyStrikeMode = "radiance"
+            LibramSwapDb.holyStrikeMode = "radiance"
             DEFAULT_CHAT_FRAME:AddMessage("|cFFAAAAFF[LibramSwap]:|r Holy Strike set to |cFFFFD700" .. HOLY_STRIKE_RADIANCE .. "|r")
         elseif arg == "eternal" or arg == "e" then
-            LibramHolyStrikeMode = "eternal"
+            LibramSwapDb.holyStrikeMode = "eternal"
             DEFAULT_CHAT_FRAME:AddMessage("|cFFAAAAFF[LibramSwap]:|r Holy Strike set to |cFFFFD700" .. HOLY_STRIKE_ETERNAL_TOWER .. "|r")
         else
             DEFAULT_CHAT_FRAME:AddMessage("|cFFAAAAFF[LibramSwap]:|r c||cFFFF5555Usage: /ls holystrike [eternal / radiance]|r")
         end
 
     elseif cmd == "status" then
-        local status = LibramSwapEnabled and "|cFF00FF00ENABLED|r" or "|cFFFF0000DISABLED|r"
-        DEFAULT_CHAT_FRAME:AddMessage("|cFFAAAAFF[LibramSwap] Status:|r " .. status)
-
-        local spamStatus = LibramSwapSpam and "|cFF00FF00ON|r" or "|cFFFF0000OFF|r"
-        DEFAULT_CHAT_FRAME:AddMessage("  Swap messages: " .. spamStatus)
-        
-        -- Show Consecration setting
-        local consecLibram = (LibramConsecrationMode == "farraki") and CONSECRATION_FARRAKI or CONSECRATION_FAITHFUL
-        DEFAULT_CHAT_FRAME:AddMessage("  Consecration: |cFFFFD700" .. consecLibram .. "|r")
-        
-        -- Show Holy Strike setting
-        local hsLibram = (LibramHolyStrikeMode == "eternal") and HOLY_STRIKE_ETERNAL_TOWER or HOLY_STRIKE_RADIANCE
-        DEFAULT_CHAT_FRAME:AddMessage("  Holy Strike: |cFFFFD700" .. hsLibram .. "|r")
+        printStatus()
         
     elseif cmd == "help" or cmd == "?" then
         DEFAULT_CHAT_FRAME:AddMessage("|cFFAAAAFF[LibramSwap] Commands:|r")
@@ -473,8 +481,8 @@ local function HandleLibramSwapCommand(msg)
         
     elseif cmd == "" then
         -- Toggle behavior when no argument provided
-        LibramSwapEnabled = not LibramSwapEnabled
-        if LibramSwapEnabled then
+        LibramSwapDb.enabled = not LibramSwapDb.enabled
+        if LibramSwapDb.enabled then
             DEFAULT_CHAT_FRAME:AddMessage("|cFFAAAAFF[LibramSwap]:|r |cFF00FF00ENABLED|r")
         else
             DEFAULT_CHAT_FRAME:AddMessage("|cFFAAAAFF[LibramSwap]:|r |cFFFF0000DISABLED|r")
