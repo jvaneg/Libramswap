@@ -238,6 +238,11 @@ local function HasItemInBags(itemName)
     return nil
 end
 
+-- whether or not the player has the libram, either in bag or equipped
+local function HasLibram(libramName)
+    return (lastEquippedLibram == libramName) or HasItemInBags(libramName)
+end
+
 -- Returns target HP% (number) or nil if no valid target
 local function TargetHealthPct()
     if not UnitExists("target") or UnitIsDeadOrGhost("target") then return nil end
@@ -312,28 +317,26 @@ end
 local function ResolveLibramForSpell(spellName)
     -- Special handling: Consecration libram is user-selectable
     if spellName == "Consecration" then
-        local mode = (LibramSwapDb.consecrationMode == "farraki") and "farraki" or "faithful"
-        if mode == "farraki" then
-            if HasItemInBags(CONSECRATION_FARRAKI) then return CONSECRATION_FARRAKI end
-            if HasItemInBags(CONSECRATION_FAITHFUL) then return CONSECRATION_FAITHFUL end
+        if LibramSwapDb.consecrationMode == "farraki" then
+            if HasLibram(CONSECRATION_FARRAKI) then return CONSECRATION_FARRAKI end
+            if HasLibram(CONSECRATION_FAITHFUL) then return CONSECRATION_FAITHFUL end
             return nil
         else
-            if HasItemInBags(CONSECRATION_FAITHFUL) then return CONSECRATION_FAITHFUL end
-            if HasItemInBags(CONSECRATION_FARRAKI) then return CONSECRATION_FARRAKI end
+            if HasLibram(CONSECRATION_FAITHFUL) then return CONSECRATION_FAITHFUL end
+            if HasLibram(CONSECRATION_FARRAKI) then return CONSECRATION_FARRAKI end
             return nil
         end
     end
 
     -- Special handling: Holy Strike libram is user-selectable
     if spellName == "Holy Strike" then
-        local mode = (LibramSwapDb.holyStrikeMode == "eternal") and "eternal" or "radiance"
-        if mode == "eternal" then
-            if HasItemInBags(HOLY_STRIKE_ETERNAL_TOWER) then return HOLY_STRIKE_ETERNAL_TOWER end
-            if HasItemInBags(HOLY_STRIKE_RADIANCE) then return HOLY_STRIKE_RADIANCE end
+        if LibramSwapDb.holyStrikeMode == "eternal" then
+            if HasLibram(HOLY_STRIKE_ETERNAL_TOWER) then return HOLY_STRIKE_ETERNAL_TOWER end
+            if HasLibram(HOLY_STRIKE_RADIANCE) then return HOLY_STRIKE_RADIANCE end
             return nil
         else
-            if HasItemInBags(HOLY_STRIKE_RADIANCE) then return HOLY_STRIKE_RADIANCE end
-            if HasItemInBags(HOLY_STRIKE_ETERNAL_TOWER) then return HOLY_STRIKE_ETERNAL_TOWER end
+            if HasLibram(HOLY_STRIKE_RADIANCE) then return HOLY_STRIKE_RADIANCE end
+            if HasLibram(HOLY_STRIKE_ETERNAL_TOWER) then return HOLY_STRIKE_ETERNAL_TOWER end
             return nil
         end
     end
@@ -343,7 +346,7 @@ local function ResolveLibramForSpell(spellName)
 
     -- Fallbacks if best pick isn't present
     if spellName == "Flash of Light" then
-        if not HasItemInBags("Libram of Light") and HasItemInBags("Libram of Divinity") then
+        if not HasLibram("Libram of Light") and HasLibram("Libram of Divinity") then
             libram = "Libram of Divinity"
         end
     end
