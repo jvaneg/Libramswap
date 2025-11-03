@@ -1,5 +1,7 @@
 # LibramSwap
-Adds libram equips to paladin spellcasts
+Swaps to the correct libram before casting Paladin spells. Just put them in your bag and cast!
+
+Supports casts via the action bar, macros, the spellbook, and all addons I've seen so far (but make an issue if you find one that doesn't work).
 
 ## Commands
 All commands support three aliases: `/libramswap`, `/lswap`, or `/ls`
@@ -23,16 +25,6 @@ Some spells have multiple libram options. You can choose which one to use:
 #### Holy Strike
 - `/ls holystrike eternal` or `/ls hs e` - Use **Libram of the Eternal Tower** (default)
 - `/ls holystrike radiance` or `/ls hs r` - Use **Libram of Radiance**
-
-## Action Bars
-Currently LibramSwap won't work with spells directly on action bars. If you want to cast a spell from your action bar, put it in a macro and put the macro on your action bar.
-
-```
-#showtooltip
-/cast Holy Light
-```
-
-LibramSwap will automatically equip Libram of Radiance before the cast goes through.
 
 ## Supported Spells & Librams
 

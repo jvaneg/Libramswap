@@ -13,6 +13,7 @@ local UseContainerItem      = UseContainerItem
 local GetInventoryItemLink  = GetInventoryItemLink
 local GetSpellName          = GetSpellName
 local GetSpellCooldown      = GetSpellCooldown
+local GetActionText         = GetActionText
 local GetTime               = GetTime
 local string_find           = string.find
 local BOOKTYPE_SPELL        = BOOKTYPE_SPELL or "spell"
@@ -421,19 +422,52 @@ local function printStatus()
     DEFAULT_CHAT_FRAME:AddMessage("  Holy Strike: |cFFFFD700" .. hsLibram .. "|r")
 end
 
+-- ====================
+-- Hidden Tooltip jank (needed to read spell names from action bar presses)
+-- ====================
+local hiddenActionTooltip = CreateFrame("GameTooltip", "LibramSwapActionTooltip", UIParent, "GameTooltipTemplate")
+
+local function GetActionSpellName(slot)
+    hiddenActionTooltip:SetOwner(UIParent, "ANCHOR_NONE")
+    hiddenActionTooltip:SetAction(slot)
+    local name = LibramSwapActionTooltipTextLeft1:GetText()
+    local rank = LibramSwapActionTooltipTextRight1:GetText()
+    hiddenActionTooltip:Hide()
+    return name, rank
+end
+
 -- =====================
 -- Hooks (CastSpellByName / CastSpell)
 -- =====================
 local Original_CastSpellByName = CastSpellByName
-function CastSpellByName(spellName, bookType)
-    if not LibramSwapDb.enabled then
-        return Original_CastSpellByName(spellName, bookType)
+local Original_CastSpell = CastSpell
+local Original_UseAction = UseAction
+
+-- Core handler for any spell cast event
+local function HandleSpellCast(base, rank, spellId)
+    if not LibramSwapDb.enabled then 
+        return 
     end
 
-    local base = SplitNameAndRank(spellName) -- base only for map/throttles
+    if not base then 
+        return
+    end
+
     local libram = ResolveLibramForSpell(base)
-    if not (libram and IsSpellReady(spellName)) then -- rank-aware readiness
-        return Original_CastSpellByName(spellName, bookType)
+    if not libram then 
+        return
+    end
+
+    -- Rank-aware readiness (spellId preferred if available)
+    if spellId then
+        ready = IsSpellReadyById(spellId)
+    else
+        local spellNameAndRank = (rank and rank ~= "") and (base .. "(" .. rank .. ")") or base
+        ready = IsSpellReady(spellNameAndRank)
+    end
+
+    if not ready then
+        return
     end
 
     if base == "Judgement" then
@@ -444,41 +478,36 @@ function CastSpellByName(spellName, bookType)
     else
         EquipLibramForSpell(base, libram)
     end
+end
 
+-- Hook: CastSpellByName (used by macros and scripts)
+function CastSpellByName(spellName, bookType)
+    local name, rank = SplitNameAndRank(spellName)
+    HandleSpellCast(name, rank)
     return Original_CastSpellByName(spellName, bookType)
 end
 
-local Original_CastSpell = CastSpell
+-- Hook: CastSpell (used by spellbook and macros)
 function CastSpell(spellIndex, bookType)
-    if not (LibramSwapDb.enabled and bookType == BOOKTYPE_SPELL) then
+    if bookType ~= BOOKTYPE_SPELL then
         return Original_CastSpell(spellIndex, bookType)
     end
 
     local name, rank = GetSpellName(spellIndex, BOOKTYPE_SPELL)
-    if not name then
-        return Original_CastSpell(spellIndex, bookType)
-    end
-
-    local libram = ResolveLibramForSpell(name) -- base name for map
-    if not libram then
-        return Original_CastSpell(spellIndex, bookType)
-    end
-
-    local spec = (rank and rank ~= "") and (name .. "(" .. rank .. ")") or name
-    if not IsSpellReady(spec) then -- exact-rank readiness
-        return Original_CastSpell(spellIndex, bookType)
-    end
-
-    if name == "Judgement" then
-        local hp = TargetHealthPct()
-        if hp and hp <= 35 then
-            EquipLibramForSpell(name, libram)
-        end
-    else
-        EquipLibramForSpell(name, libram)
-    end
-
+    HandleSpellCast(name, rank, spellIndex)
     return Original_CastSpell(spellIndex, bookType)
+end
+
+-- Hook: UseAction (used by action bar clicks and keybinds)
+function UseAction(slot, checkCursor, onSelf)
+    -- indicates this is a macro, we dont want to call for macros
+    if GetActionText(slot) then
+        return Original_UseAction(slot, checkCursor, onSelf)
+    end
+
+    local name, rank = GetActionSpellName(slot)
+    HandleSpellCast(name, rank, id)
+    return Original_UseAction(slot, checkCursor, onSelf)
 end
 
 -- =====================
