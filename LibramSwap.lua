@@ -157,6 +157,9 @@ local LibramSwapFrame = CreateFrame("Frame")
 LibramSwapFrame:RegisterEvent("PLAYER_LOGIN")
 LibramSwapFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 LibramSwapFrame:RegisterEvent("BAG_UPDATE")
+-- Clear spell cache on spellbook changes (respec/learning spells)
+LibramSwapFrame:RegisterEvent("SPELLS_CHANGED")
+LibramSwapFrame:RegisterEvent("LEARNED_SPELL_IN_TAB")
 
 LibramSwapFrame:SetScript("OnEvent", function(_, event)
     if event == "PLAYER_LOGIN" or event == "PLAYER_ENTERING_WORLD" then
@@ -164,6 +167,10 @@ LibramSwapFrame:SetScript("OnEvent", function(_, event)
     elseif event == "BAG_UPDATE" then
         -- simple & safe: rebuild immediately (cost is tiny since we only watch librams)
         BuildBagIndex()
+    elseif event == "SPELLS_CHANGED" or event == "LEARNED_SPELL_IN_TAB" then
+        -- Spellbook changed (respec / learning / unlearning spells). Clear spell cache so
+        -- stale spell indices aren't used (this fixes the "Unable to find spell slot" error).
+        for k in pairs(SpellCache) do SpellCache[k] = nil end
     end
 end)
 
@@ -182,7 +189,13 @@ end
 
 -- gets spell readiness by ID
 local function IsSpellReadyById(spellId)
-    local start, duration, enabled = GetSpellCooldown(spellId, BOOKTYPE_SPELL)
+    -- Guard: ensure GetSpellCooldown doesn't blow up with a stale/out-of-range spellId.
+    local ok, start, duration, enabled = pcall(GetSpellCooldown, spellId, BOOKTYPE_SPELL)
+    if not ok then
+        -- Failed to query cooldown for this spell index - treat as not ready and clear nothing here.
+        return false
+    end
+
     if not (start and duration) then
         return false 
     end
@@ -459,6 +472,7 @@ local function HandleSpellCast(base, rank, spellId)
     end
 
     -- Rank-aware readiness (spellId preferred if available)
+    local ready
     if spellId then
         ready = IsSpellReadyById(spellId)
     else
@@ -506,7 +520,8 @@ function UseAction(slot, checkCursor, onSelf)
     end
 
     local name, rank = GetActionSpellName(slot)
-    HandleSpellCast(name, rank, id)
+    -- pass name/rank only; we don't have a reliable spell index here
+    HandleSpellCast(name, rank)
     return Original_UseAction(slot, checkCursor, onSelf)
 end
 
@@ -591,4 +606,3 @@ SLASH_LIBRAMSWAP1 = "/libramswap"
 SLASH_LIBRAMSWAP2 = "/lswap"
 SLASH_LIBRAMSWAP3 = "/ls"
 SlashCmdList["LIBRAMSWAP"] = HandleLibramSwapCommand
-
